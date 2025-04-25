@@ -1,0 +1,10 @@
+Python 3.10 is required to run the overcooked_ai
+
+In Terminal: 
+$ uv venv
+$ uv sync 
+
+uv is like a package manager like pip but faster so you can just pip add <pkg_name>
+
+To activate python3.10 environment (Requirement):
+source .venv/bin/activate
