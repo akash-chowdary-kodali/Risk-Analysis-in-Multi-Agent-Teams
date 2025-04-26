@@ -1,43 +1,70 @@
-FROM python:3.7-buster 
-
-ARG BUILD_ENV
-ARG OVERCOOKED_BRANCH
-ARG GRAPHICS
+FROM ubuntu:22.04
 
 WORKDIR /app
 
-# Install non-chai dependencies
 COPY ./requirements.txt ./requirements.txt
-RUN pip install -r requirements.txt
 
-# Install eventlet production server if production build
-RUN if [ "$BUILD_ENV" = "production" ] ; then pip install eventlet ; fi
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libevent-dev \
+    pkg-config \
+    gcc \
+    libc6-dev \
+    libffi-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Clone chai code
-RUN git clone --recursive https://github.com/HumanCompatibleAI/overcooked_ai.git --branch $OVERCOOKED_BRANCH --single-branch /overcooked_ai
+# Install Python 3.10 from source
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Dummy data_dir so things don't break
-RUN echo "import os; DATA_DIR=os.path.abspath('.')" >> /overcooked_ai/src/human_aware_rl/data_dir.py
+RUN wget https://www.python.org/ftp/python/3.10.13/Python-3.10.13.tgz
+RUN tar -xf Python-3.10.13.tgz
+RUN cd Python-3.10.13 && \
+    ./configure --enable-optimizations && \
+    make -j $(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf Python-3.10.13*
 
-# Install chai dependencies
-RUN pip install -e '/overcooked_ai[harl]'
+# Configure virtual environment
+RUN python3.10 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-RUN apt-get -y update
-RUN apt-get install -y libgl1-mesa-dev
+# Upgrade pip and install wheel
+RUN /opt/venv/bin/pip install --upgrade pip wheel
 
-# Copy over remaining files
-COPY ./static ./static
-COPY ./*.py ./
-COPY ./graphics/$GRAPHICS ./static/js/graphics.js
-COPY ./config.json ./config.json
+# Install Python dependencies
+RUN CFLAGS="-fPIC" \
+    LDFLAGS="-L/usr/lib/x86_64-linux-gnu" \
+    /opt/venv/bin/pip install --no-cache-dir --no-build-isolation \
+    -r requirements.txt
 
+RUN if [ "production" = "production" ] ; then /opt/venv/bin/pip install "psycopg2-binary"; fi
 
+# Clone the overcooked_ai repository
+RUN git clone --recursive https://github.com/HumanCompatibleAI/overcooked_ai /app/overcooked_ai
 
-# Set environment variables that will be used by app.py
-ENV HOST 0.0.0.0
-ENV PORT 5000
-ENV CONF_PATH config.json
+# Set data directory (Corrected path)
+RUN mkdir -p /app/overcooked_ai/overcooked_ai && \
+    echo "import os; DATA_DIR=os.path.abspath('./overcooked_ai')" >> /app/overcooked_ai/overcooked_ai/__init__.py
 
-# Do the thing
-EXPOSE 5000
-CMD ["python", "-u", "app.py"]
+# Install Overcooked AI
+RUN /opt/venv/bin/pip install -e '/app/overcooked_ai[harl]'
+
+# Copy the application files (Corrected path)
+COPY ./src /app/src
+
+# Clean up
+RUN apt-get purge -y --auto-remove \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
+
+# Add CMD or ENTRYPOINT here to run your application
+# Example: Assuming your main application script is named "app.py"
+CMD ["python", "/app/src/overcooked_demo/app.py"]
