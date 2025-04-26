@@ -1,5 +1,5 @@
 #!/bin/sh
-if [[ $1 = prod* ]];
+if [ "$(echo "$1" | cut -c1-4)" = "prod" ];
 then
     echo "production"
     export BUILD_ENV=production
