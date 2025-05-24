@@ -145,7 +145,7 @@ def renumber_reversed_agent_runs(directory_path, dry_run=True):
 # --- How to use this script ---
 if __name__ == "__main__":
     # --- Configuration ---
-    PERFORM_DRY_RUN = True # ALWAYS RUN WITH dry_run=True FIRST TO VERIFY!
+    PERFORM_DRY_RUN = False # ALWAYS RUN WITH dry_run=True FIRST TO VERIFY!
 
     # === OPTION 1: Specify an ABSOLUTE path to your JSON files ===
     # If you use this, the 'relative_path_parts' below will be ignored.
