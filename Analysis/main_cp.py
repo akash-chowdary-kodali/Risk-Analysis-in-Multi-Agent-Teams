@@ -14,6 +14,9 @@ class TeamComparator:
         self.ref_trajectories = []
         self.ref_distances = []  # Store reference pairwise distances
         self.test_distances = []  # Store test vs reference distances
+        self.calibration_scores = []
+
+
 
     def _load_team_data(self, filepath):
         """Load and validate team trajectory data from JSON file"""
@@ -76,39 +79,34 @@ class TeamComparator:
 
         return alignment.distance
 
-
     def fit_reference(self, ref_file):
-        """Calculate conformance threshold from reference team"""
+        """Fit reference trajectories using conformal prediction"""
         self.ref_trajectories = self._load_team_data(ref_file)
 
-        for i in range(3):
-            self.ref_trajectories.append(self.ref_trajectories[0])
+        # Calculate leave-one-out conformity scores
+        self.calibration_scores = []
+        for i, traj in enumerate(self.ref_trajectories):
+            other_trajs = [t for j, t in enumerate(self.ref_trajectories) if j != i]
+            min_dist = min(self._trajectory_distance(traj, t) for t in other_trajs)
+            self.calibration_scores.append(min_dist)
 
-        # Calculate pairwise distances between reference trajectories
-        self.ref_distances = []
-        for i in range(len(self.ref_trajectories)):
-            for j in range(i + 1, len(self.ref_trajectories)):
-                d = self._trajectory_distance(self.ref_trajectories[i], self.ref_trajectories[j])
-                self.ref_distances.append(d)
-
-        self.epsilon = np.percentile(self.ref_distances, (1 - self.delta) * 100)
-        return self.epsilon
+        return self
 
     def compare_team(self, test_file):
-        """Compare test team against reference"""
+        """Compare test team using conformal prediction p-values"""
         test_trajectories = self._load_team_data(test_file)
-        self.test_distances = []
         alerts = []
+        p_values = []
 
         for test_traj in test_trajectories:
-            min_dist = min(
-                self._trajectory_distance(test_traj, ref_traj)
-                for ref_traj in self.ref_trajectories
-            )
-            self.test_distances.append(min_dist)
-            alerts.append(1 if min_dist > self.epsilon else 0)
+            test_score = min(self._trajectory_distance(test_traj, ref_traj)
+                             for ref_traj in self.ref_trajectories)
+            pval = (1 + sum(score <= test_score for score in self.calibration_scores)) \
+                   / (1 + len(self.calibration_scores))
+            p_values.append(pval)
+            alerts.append(1 if pval < self.delta else 0)
 
-        return alerts
+        return alerts, p_values
 
     def plot_distances(self, save_path=None):
         """Visualize distance distributions and threshold"""
