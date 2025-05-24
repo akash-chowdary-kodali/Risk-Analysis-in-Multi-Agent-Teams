@@ -277,51 +277,18 @@ def analyze_and_plot_average_stats_and_distances(folder_path, episodes_to_averag
             else:
                 print(f"  No valid averaged distance data to plot for pair: {N1_name} vs {N2_name}.")
 
-        # --- Distance Histogram ---
-        if all_individual_distances_for_pair:
-            val_min = np.min(all_individual_distances_for_pair)
-            val_max = np.max(all_individual_distances_for_pair)
+        # Assuming averaged_distances is a NumPy array
+        # Remove NaN values before plotting
+        valid_distances = averaged_distances[~np.isnan(averaged_distances)]
 
-            bin_width = 0.01  # Define the very fine-grained bin width
-
-            start_edge = math.floor(val_min / bin_width) * bin_width
-            end_edge_inclusive_candidate = math.ceil(val_max / bin_width) * bin_width
-
-            if end_edge_inclusive_candidate <= start_edge:
-                final_end_edge = start_edge + bin_width
-            else:
-                final_end_edge = end_edge_inclusive_candidate
-
-            custom_bin_edges = np.arange(start_edge, final_end_edge + bin_width, bin_width)
-
-            if len(custom_bin_edges) < 2:  # Fallback if somehow only one edge was created
-                custom_bin_edges = np.array([start_edge, start_edge + bin_width])
-
-            plt.figure(figsize=(13, 7))
-            plt.hist(all_individual_distances_for_pair, bins=custom_bin_edges, color='darkcyan', edgecolor='black',
-                     alpha=0.7)
-            plt.title(
-                f"Histogram of Euclidean Distances (Bin Width: {bin_width:.2f})\n(Episodes {min(episodes_to_average)}-{max(episodes_to_average)}, n={num_episodes_for_this_pair})\n{N1_name} vs {N2_name}",
-                fontsize=14)
-            plt.xlabel("Euclidean Distance", fontsize=12)
-            plt.ylabel("Frequency (Count)", fontsize=12)
-            plt.grid(True, linestyle='--', alpha=0.5)
-
-            # Adjust x-ticks for readability with many bins
-            current_ax = plt.gca()
-            if len(custom_bin_edges) > 40:  # If more than 40 bin edges, let matplotlib choose optimal ticks
-                current_ax.xaxis.set_major_locator(
-                    plt.MaxNLocator(nbins=15, prune='both'))  # Suggest ~15 nicely spaced ticks
-            else:  # Otherwise, show all bin edges if manageable
-                plt.xticks(custom_bin_edges)
-
-            plt.xticks(rotation=45, ha="right")
-            plt.tight_layout()
-            print(
-                f"  Displaying distance histogram with bin width {bin_width:.3f} for: {N1_name} vs {N2_name}")  # adjusted precision for print
-            plt.show()
-        else:
-            print(f"  No valid individual distance data to plot histogram for pair: {N1_name} vs {N2_name}.")
+        # Create histogram
+        plt.figure(figsize=(8, 5))
+        plt.hist(valid_distances, bins=30, edgecolor='black')
+        plt.title('Histogram of Averaged Distances')
+        plt.xlabel('Distance')
+        plt.ylabel('Frequency')
+        plt.grid(True)
+        plt.show()
 
 
 folder_to_analyze = "../Analysis/game_trajectories/Cramped Room/"
