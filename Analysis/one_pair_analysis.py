@@ -329,8 +329,10 @@ def analyze_and_plot_average_stats_and_distances(folder_path, episodes_to_averag
                 plt.plot(plot_timesteps_valid, plot_values_valid, marker='.', linestyle='-', markersize=4,
                          label=f"Avg. Distance")
                 plt.title(
-                    f"Average Euclidean Distance (Episodes {min(episodes_to_average)}-{max(episodes_to_average)}, n={num_episodes_for_this_pair})\n{N1_name} vs {N2_name}",
-                    fontsize=14)
+                    f"Euclidean Distance Over Time\n{N1_name} vs {N2_name} (Avg over {num_episodes_for_this_pair} episodes)",
+                    fontsize=14
+                )
+
                 plt.xlabel("Timestep", fontsize=12)
                 plt.ylabel("Average Euclidean Distance", fontsize=12)
                 plt.grid(True, linestyle='--', alpha=0.7)
@@ -350,10 +352,12 @@ def analyze_and_plot_average_stats_and_distances(folder_path, episodes_to_averag
         # Create histogram
         plt.figure(figsize=(8, 5))
         plt.hist(valid_distances, bins=30, edgecolor='black')
-        plt.title('Histogram of Averaged Distances')
+        plt.title(
+            f"Histogram of Averaged Distances\n{N1_name} vs {N2_name}", fontsize=13)
         plt.xlabel('Distance')
         plt.ylabel('Frequency')
         plt.grid(True)
+        plt.tight_layout()
         plt.show()
 
 
