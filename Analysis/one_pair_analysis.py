@@ -188,6 +188,7 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name_from_file
         "entropy_p0": entropies[0], "deliveries_p0": division_of_labor[0],
         "interact_p1": interact_counts[1], "idle_p1": idle_counts[1],
         "entropy_p1": entropies[1], "deliveries_p1": division_of_labor[1],
+        "ep_rewards": rewards,
     }
 
 
@@ -360,14 +361,261 @@ def analyze_and_plot_average_stats_and_distances(folder_path, episodes_to_averag
         plt.tight_layout()
         plt.show()
 
+def compute_and_plot_95th_percentiles(aggregated_pair_episode_data):
+    """
+    Computes the 95th percentile of Euclidean distances for each agent pair across episodes,
+    sorts them, and plots a horizontal bar chart.
+    """
+    print("\n--- 95th Percentile Euclidean Distance by Agent Pair ---")
+    pair_95th_percentiles = []
+
+    for canonical_pair, episode_data_list in aggregated_pair_episode_data.items():
+        all_distances = []
+        for ep_data in episode_data_list:
+            all_distances.extend([d for d in ep_data["distance_series"] if d is not None and not np.isnan(d)])
+        if all_distances:
+            percentile_95 = np.percentile(all_distances, 95)
+            pair_95th_percentiles.append((canonical_pair, percentile_95))
+            print(f"{canonical_pair}: 95th Percentile = {percentile_95:.2f}")
+        else:
+            print(f"{canonical_pair}: No valid distance data.")
+
+    # Sort pairs by 95th percentile value descending
+    pair_95th_percentiles.sort(key=lambda x: x[1], reverse=True)
+
+    # Prepare data for plotting
+    labels = [f"{p[0][0]} vs {p[0][1]}" for p in pair_95th_percentiles]
+    values = [p[1] for p in pair_95th_percentiles]
+
+    # Plot if data exists
+    if values:
+        plt.figure(figsize=(12, 6))
+        plt.barh(labels, values, edgecolor='black')
+        plt.xlabel("95th Percentile of Euclidean Distance", fontsize=12)
+        plt.title("Sorted 95th Percentiles of Euclidean Distance by Agent Pair", fontsize=14)
+        plt.gca().invert_yaxis()
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("No valid distance data to plot 95th percentile chart.")
+
+def compute_aggregated_pair_episode_data(folder_path, episodes_to_average=range(1, 21)):
+    """
+    Scans the specified folder, parses Overcooked-AI JSON logs,
+    and returns a dictionary of aggregated episode stats by agent pair.
+    """
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"The specified folder does not exist: {folder_path}")
+
+    all_filenames_in_folder = os.listdir(folder_path)
+    if not all_filenames_in_folder:
+        print(f"No files found in folder: {folder_path}")
+        return {}
+
+    aggregated_pair_episode_data = defaultdict(list)
+    processed_file_count = 0
+
+    for filename in all_filenames_in_folder:
+        if not filename.endswith(".json"):
+            continue
+        parsed_info = parse_filename_for_agents_and_episode(filename)
+        if parsed_info:
+            agent1_name, agent2_name, episode_number = parsed_info
+            if episode_number in episodes_to_average:
+                processed_file_count += 1
+                filepath = os.path.join(folder_path, filename)
+                stats_and_series = get_stats_and_distance_series_from_json_file(
+                    filepath, agent1_name, agent2_name)
+                if stats_and_series:
+                    canonical_pair_key = tuple(sorted((agent1_name, agent2_name)))
+                    aggregated_pair_episode_data[canonical_pair_key].append(stats_and_series)
+        else:
+            print(f"Skipped unrecognized file: {filename}")
+
+    if processed_file_count == 0:
+        print(f"No files matching criteria were processed.")
+        return {}
+
+    return aggregated_pair_episode_data
+
+def compute_and_plot_reward_95th_percentiles(aggregated_pair_episode_data):
+    """
+    Computes the 95th percentile of total episode rewards for each agent pair,
+    plots reward histograms and a sorted bar chart of percentiles.
+    """
+    print("\n--- 95th Percentile of Total Episode Rewards by Agent Pair ---")
+    pair_reward_95th_percentiles = []
+
+    for canonical_pair, episode_data_list in aggregated_pair_episode_data.items():
+        print(f"Analyzing {canonical_pair} with {len(episode_data_list)} episodes...")
+
+        total_rewards = [
+            ep["total_reward"]
+            for ep in episode_data_list
+            if "total_reward" in ep and ep["total_reward"] is not None
+        ]
+
+        print(f"  → Total rewards collected: {total_rewards}")
+
+        if len(total_rewards) > 0:
+            # Even if all are zeros, include the pair
+            percentile_95 = np.percentile(total_rewards, 95)
+            pair_reward_95th_percentiles.append((canonical_pair, percentile_95))
+            print(f"  → 95th Percentile = {percentile_95:.2f}")
+
+            # Histogram for this pair
+            plt.figure(figsize=(8, 5))
+            plt.hist(total_rewards, bins=15, edgecolor='black')
+            plt.title(f"Histogram of Total Rewards\n{canonical_pair[0]} vs {canonical_pair[1]}", fontsize=13)
+            plt.xlabel('Total Episode Reward')
+            plt.ylabel('Frequency')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show()
+        else:
+            print(f"  → Skipped (no reward data)")
+
+    # Sort for overall bar chart
+    pair_reward_95th_percentiles.sort(key=lambda x: x[1], reverse=True)
+    labels = [f"{p[0][0]} vs {p[0][1]}" for p in pair_reward_95th_percentiles]
+    values = [p[1] for p in pair_reward_95th_percentiles]
+
+    if values:
+        plt.figure(figsize=(12, 6))
+        bars = plt.barh(labels, values, edgecolor='black')
+        for i, val in enumerate(values):
+            plt.text(val + 1, i, f"{val:.0f}", va='center')  # Add value labels next to bars
+
+        plt.xlabel("95th Percentile of Total Episode Reward", fontsize=12)
+        plt.title("Sorted 95th Percentiles of Total Rewards by Agent Pair", fontsize=14)
+        plt.gca().invert_yaxis()  # Highest at top
+        plt.grid(True, linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("No valid reward data to plot 95th percentile chart.")
+
+def compute_and_plot_reward_intervals(aggregated_pair_episode_data, max_n_rewards_to_track=5):
+    """
+    Computes and plots the average time between successive rewards (e.g., 0→1, 1→2, ..., 4→5).
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from collections import defaultdict
+
+    print("\n--- Average Reward Intervals by Agent Pair ---")
+    pair_reward_intervals = {}
+    interval_index_to_timings = defaultdict(list)  # index = interval (0→1, 1→2, ...)
+
+    for canonical_pair, episode_data_list in aggregated_pair_episode_data.items():
+        intervals_by_index = [[] for _ in range(max_n_rewards_to_track)]
+
+        for ep_data in episode_data_list:
+            rewards = ep_data.get("ep_rewards", [])
+            if not rewards:
+                continue
+
+            reward_timesteps = [i for i, r in enumerate(rewards) if r == 20]
+            if not reward_timesteps:
+                continue
+
+            # Insert virtual step 0 for the first interval (0 → 1)
+            reward_timesteps = [0] + reward_timesteps[:max_n_rewards_to_track]
+
+            for i in range(1, len(reward_timesteps)):
+                interval = reward_timesteps[i] - reward_timesteps[i - 1]
+                intervals_by_index[i - 1].append(interval)
+
+        avg_intervals = []
+        for i, intervals in enumerate(intervals_by_index):
+            if intervals:
+                avg = sum(intervals) / len(intervals)
+                avg_intervals.append(avg)
+                interval_index_to_timings[i].append((canonical_pair, avg))
+            else:
+                avg_intervals.append(None)
+
+        pair_reward_intervals[canonical_pair] = avg_intervals
+
+    # --- Plot 1: Line chart per agent pair ---
+    for canonical_pair, avg_intervals in pair_reward_intervals.items():
+        interval_labels = [f"{i}→{i+1}" for i in range(max_n_rewards_to_track)]
+        values = [v if v is not None else np.nan for v in avg_intervals]
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(interval_labels, values, marker='o', label='Avg. Interval')
+        plt.title(f"Avg. Interval Between Rewards\n{canonical_pair[0]} vs {canonical_pair[1]}", fontsize=13)
+        plt.xlabel("Reward Interval")
+        plt.ylabel("Average Time Between Rewards")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    # --- Plot 2: Sorted bar charts for each interval index ---
+    print("\n--- Sorted Avg. Interval Between Rewards Across Pairs ---")
+    for idx in range(max_n_rewards_to_track):
+        timing_list = interval_index_to_timings[idx]
+        if timing_list:
+            timing_list.sort(key=lambda x: x[1])
+            labels = [f"{p[0]} vs {p[1]}" for p, _ in timing_list]
+            values = [v for _, v in timing_list]
+
+            print(f"\nInterval {idx}→{idx+1}:")
+            for pair, avg_step in timing_list:
+                print(f"  {pair}: Interval = {avg_step:.2f}")
+
+            # Plot bar chart
+            plt.figure(figsize=(10, 6))
+            plt.barh(labels, values, edgecolor='black')
+            for i, val in enumerate(values):
+                plt.text(val + 2, i, f"{val:.1f}", va='center', fontsize=9)
+            plt.xlabel("Average Time Between Rewards")
+            plt.title(f"Avg. Interval {idx}→{idx+1} Between Rewards (Sorted)")
+            plt.gca().invert_yaxis()
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.tight_layout()
+            plt.show()
+        else:
+            print(f"\nInterval {idx}→{idx+1}: No data")
+
 
 folder_to_analyze = "./game_trajectories/Cramped Room"
+episodes = range(1, 21)
+
 if folder_to_analyze == "./game_trajectories/Cramped Room":
     print("--- Note: Using default example path for 'folder_to_analyze'. Ensure this is correct. ---")
 
+print("\nAvailable Analyses:")
+print("1. Average stats, distance plots, and histograms")
+print("2. 95th Percentile of Euclidean Distances")
+print("3. 95th Percentile of Total Rewards")
+print("4. Average Timestep Between Each Reward (Reward Timing)")
+print("5. Run All Analyses")
+
+selection = input("\nEnter the number(s) of analysis to run (e.g., 1 or 1,3,4): ").strip()
+selected_options = {int(s.strip()) for s in selection.split(',') if s.strip().isdigit()}
+
 try:
-    analyze_and_plot_average_stats_and_distances(
-        folder_to_analyze, episodes_to_average=range(1, 21))
+    aggregated_data = compute_aggregated_pair_episode_data(folder_to_analyze, episodes_to_average=episodes)
+
+    if 1 in selected_options:
+        analyze_and_plot_average_stats_and_distances(
+            folder_to_analyze, episodes_to_average=episodes)
+
+    if any(i in selected_options for i in {2, 3, 4, 5}):
+        aggregated_data = compute_aggregated_pair_episode_data(
+            folder_to_analyze, episodes_to_average=episodes)
+
+    if 2 in selected_options or 5 in selected_options:
+        compute_and_plot_95th_percentiles(aggregated_data)
+
+    if 3 in selected_options or 5 in selected_options:
+        compute_and_plot_reward_95th_percentiles(aggregated_data)
+
+    if 4 in selected_options or 5 in selected_options:
+        compute_and_plot_reward_intervals(aggregated_data, max_n_rewards_to_track=5)
+
 except FileNotFoundError as e:
     print(f"Error: {e}")
 except Exception as e:
