@@ -91,13 +91,18 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
     rewards = data.get('ep_rewards', [[]])[0]
     
     distance_series = []
+    manhattan_distance_series = [] # New series for Manhattan Distance
     for t in range(episode_length):
         players = observations[t].get("players", [])
         if len(players) == 2 and players[0] and players[1]:
             pos0, pos1 = tuple(players[0]["position"]), tuple(players[1]["position"])
+            # Euclidean distance
             distance_series.append(math.sqrt((pos0[0] - pos1[0])**2 + (pos0[1] - pos1[1])**2))
+            # Manhattan distance
+            manhattan_distance_series.append(abs(pos0[0] - pos1[0]) + abs(pos0[1] - pos1[1]))
         else:
             distance_series.append(None)
+            manhattan_distance_series.append(None)
             
     total_reward = sum(rewards)
     soups_delivered = rewards.count(20)
@@ -106,6 +111,7 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
     
     return {
         "distance_series": distance_series,
+        "manhattan_distance_series": manhattan_distance_series, # Added new metric data
         "total_reward": total_reward,
         "soups_delivered": soups_delivered,
         "reward_efficiency": reward_efficiency,
@@ -142,12 +148,14 @@ def calculate_and_rank_metrics(aggregated_data):
     """
     pair_metrics_raw = defaultdict(dict)
 
+    # Make sure the metric name here...
     METRICS_TO_RANK = {
         "Total Reward": True,
         "Soups Delivered": True,
         "Reward Efficiency": True,
         "Conflict Count": False,
-        "95th Percentile Distance": False,
+        "95th Percentile Euclidean Dist": False, # Renamed for clarity
+        "95th Percentile Manhattan Dist": False,
         "Time to First Reward": False
     }
 
@@ -159,7 +167,11 @@ def calculate_and_rank_metrics(aggregated_data):
         pair_metrics_raw[pair]["Conflict Count"] = np.mean([e["conflict_count"] for e in episodes_data])
 
         all_distances = [d for e in episodes_data for d in e["distance_series"] if d is not None]
-        pair_metrics_raw[pair]["95th Percentile Distance"] = np.percentile(all_distances, 95) if all_distances else np.nan
+        # ...matches the dictionary key used here exactly.
+        pair_metrics_raw[pair]["95th Percentile Euclidean Dist"] = np.percentile(all_distances, 95) if all_distances else np.nan
+
+        all_manhattan_distances = [d for e in episodes_data for d in e["manhattan_distance_series"] if d is not None]
+        pair_metrics_raw[pair]["95th Percentile Manhattan Dist"] = np.percentile(all_manhattan_distances, 95) if all_manhattan_distances else np.nan
 
         first_reward_times = [e["ep_rewards"].index(20) for e in episodes_data if 20 in e["ep_rewards"]]
         pair_metrics_raw[pair]["Time to First Reward"] = np.mean(first_reward_times) if first_reward_times else 400
@@ -241,14 +253,18 @@ def print_ranking_report_horizontal(ranking_data, metrics):
     """
     Prints a detailed report in a wide, horizontal table with short, single-line headers.
     """
-    print("\n" + "="*110)
-    print(" " * 35 + "OVERALL PERFORMANCE RANKING REPORT")
-    print("="*110)
+    print("\n" + "="*120)
+    print(" " * 40 + "OVERALL PERFORMANCE RANKING REPORT")
+    print("="*120)
 
     short_headers = {
-        "Total Reward": "Reward", "Soups Delivered": "Soups",
-        "Reward Efficiency": "Effic.", "Conflict Count": "Conflict",
-        "95th Percentile Distance": "Dist.", "Time to First Reward": "Time"
+        "Total Reward": "Reward", 
+        "Soups Delivered": "Soups",
+        "Reward Efficiency": "Effic.", 
+        "Conflict Count": "Conflict",
+        "95th Percentile Euclidean Dist": "Euc. D.", # This key must also match
+        "95th Percentile Manhattan Dist": "Manh. D.",
+        "Time to First Reward": "Time"
     }
     metric_headers = [short_headers.get(m, m) for m in metrics]
     header = f"{'Rank':<6} | {'Agent Pair':<45} | {'Score':<10} | " + " | ".join([f'{h:<8}' for h in metric_headers])
@@ -270,17 +286,14 @@ def plot_rank_distribution_scatter(ranking_data, metrics):
         print("No ranking data to plot.")
         return
         
-    # Define a unique color and marker for each agent pair
     pairs = sorted([item['pair'] for item in ranking_data])
     colors = plt.cm.get_cmap('tab10', len(pairs))
     markers = ['o', 's', '^', 'D', 'v', 'p', '*', '<', '>']
     
     style_map = {pair: {'color': colors(i), 'marker': markers[i % len(markers)]} for i, pair in enumerate(pairs)}
 
-    # Determine the rank for each pair on each metric
     plot_data = []
     for metric in metrics:
-        # Sort pairs by score for the current metric to determine rank
         sorted_by_metric = sorted(ranking_data, key=lambda x: x['individual_scores'][metric], reverse=True)
         for i, item in enumerate(sorted_by_metric):
             rank = i + 1
@@ -290,27 +303,23 @@ def plot_rank_distribution_scatter(ranking_data, metrics):
     
     for item in plot_data:
         style = style_map[item['pair']]
-        # Add a small random jitter to the y-axis to prevent overlap
         y_val = metrics.index(item['metric']) + np.random.uniform(-0.1, 0.1)
         plt.scatter(item['rank'], y_val, color=style['color'], marker=style['marker'], s=200, alpha=0.8, edgecolors='black')
 
-    # Create a custom legend
     legend_elements = [Line2D([0], [0], marker=style_map[pair]['marker'], color=style_map[pair]['color'], label=pair, 
                               linestyle='None', markersize=10) for pair in pairs]
     plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', title="Agent Pairs")
 
-    # Formatting the plot
     plt.yticks(range(len(metrics)), metrics)
     plt.xlabel("Performance Rank (1 is best)", fontsize=12)
     plt.title("System Performance Rank Across Metrics", fontsize=16, weight='bold')
     plt.grid(True, axis='x', linestyle='--', alpha=0.6)
     
-    # Set x-axis ticks to be integers representing ranks
     num_pairs = len(pairs)
     plt.xticks(np.arange(1, num_pairs + 1))
     
-    plt.gca().invert_yaxis() # So the first metric in the list is at the top
-    plt.tight_layout(rect=[0, 0, 0.75, 1]) # Adjust layout to make room for legend
+    plt.gca().invert_yaxis()
+    plt.tight_layout(rect=[0, 0, 0.75, 1])
     
     print("\n--- Displaying Rank Distribution Scatter Plot ---")
     plt.show()
@@ -337,7 +346,6 @@ if __name__ == "__main__":
             
             plot_all_rankings_individually(final_ranks, used_metrics)
 
-            # Add the call to the new scatter plot function
             plot_rank_distribution_scatter(final_ranks, used_metrics)
 
     except FileNotFoundError as e:
