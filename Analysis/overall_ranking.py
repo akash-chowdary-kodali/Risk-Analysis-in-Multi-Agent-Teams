@@ -5,6 +5,10 @@ import re
 from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
+
+# This is the provided code from one_pair_analysis.py.
+# Helper functions from the original script are reused to ensure consistency.
 
 def compute_entropy(action_list):
     if not action_list:
@@ -147,6 +151,7 @@ def calculate_and_rank_metrics(aggregated_data):
         "Time to First Reward": False
     }
 
+    # Step 1: Calculate raw average value for each metric for each pair
     for pair, episodes_data in aggregated_data.items():
         pair_metrics_raw[pair]["Total Reward"] = np.mean([e["total_reward"] for e in episodes_data])
         pair_metrics_raw[pair]["Soups Delivered"] = np.mean([e["soups_delivered"] for e in episodes_data])
@@ -159,6 +164,7 @@ def calculate_and_rank_metrics(aggregated_data):
         first_reward_times = [e["ep_rewards"].index(20) for e in episodes_data if 20 in e["ep_rewards"]]
         pair_metrics_raw[pair]["Time to First Reward"] = np.mean(first_reward_times) if first_reward_times else 400
 
+    # Step 2: Normalize all metrics to a 0-100 score and sum them
     final_scores = []
     for pair in aggregated_data.keys():
         total_score = 0
@@ -170,7 +176,7 @@ def calculate_and_rank_metrics(aggregated_data):
             current_val = pair_metrics_raw[pair][metric]
             
             if max_val == min_val:
-                norm_score = 0.5  
+                norm_score = 0.5
             else:
                 norm_score = (current_val - min_val) / (max_val - min_val)
             
@@ -187,39 +193,49 @@ def calculate_and_rank_metrics(aggregated_data):
         })
 
     final_scores.sort(key=lambda x: x["total_score"], reverse=True)
-    return final_scores, METRICS_TO_RANK.keys()
+    return final_scores, list(METRICS_TO_RANK.keys())
 
-def plot_overall_rankings(ranking_data):
+def plot_all_rankings_individually(ranking_data, metrics):
     """
-    Generates a horizontal bar chart of the final system rankings (higher score is better).
+    Generates and displays a separate plot for the overall ranking and for each 
+    individual metric, one by one.
     """
     if not ranking_data:
         print("No ranking data to plot.")
         return
 
-    labels = [r["pair"] for r in ranking_data]
-    values = [r["total_score"] for r in ranking_data]
+    all_plot_metrics = ["Overall Score"] + metrics
 
-    plt.figure(figsize=(14, 8))
-    bars = plt.barh(labels, values, edgecolor='black')
-    
-    for i, bar in enumerate(bars):
-      plt.text(bar.get_width() * 0.01, bar.get_y() + bar.get_height()/2, f"#{i+1}", 
-               va='center', ha='left', color='white', fontsize=12, weight='bold')
-      plt.text(bar.get_width() + 5, bar.get_y() + bar.get_height()/2, f"{bar.get_width():.1f}", 
-               va='center', ha='left', color='black', fontsize=10)
+    for metric_name in all_plot_metrics:
+        plt.figure(figsize=(12, 8))
+        
+        if metric_name == "Overall Score":
+            sort_key, values_key = "total_score", "total_score"
+            sorted_data = sorted(ranking_data, key=lambda x: x[values_key], reverse=True)
+            bar_color = 'navy'
+        else:
+            sort_key, values_key = "individual_scores", metric_name
+            sorted_data = sorted(ranking_data, key=lambda x: x[sort_key][values_key], reverse=True)
+            bar_color = 'cornflowerblue'
 
-    plt.xlabel("Overall Performance Score (Higher is Better).", fontsize=12)
-    plt.title("Overall System Performance Ranking using every metric.", fontsize=16)
-    plt.gca().invert_yaxis()
-    plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey', axis='x')
-    
-    plt.xlim(0, max(values) * 1.1)
+        labels = [r["pair"] for r in sorted_data]
+        values = [r[sort_key][values_key] if metric_name != "Overall Score" else r[values_key] for r in sorted_data]
+        
+        bars = plt.barh(labels, values, color=bar_color, edgecolor='black')
+        
+        plt.title(f"Ranking by: {metric_name}", fontsize=16, weight='bold')
+        plt.xlabel("Score (Higher is Better)", fontsize=12)
+        plt.gca().invert_yaxis()
+        plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey', axis='x')
 
-    plt.tight_layout()
-    
-    print("\n--- Displaying Overall Rankings Plot ---")
-    plt.show()
+        for bar in bars:
+            width = bar.get_width()
+            plt.text(width, bar.get_y() + bar.get_height() / 2, f' {width:.1f}',
+                     va='center', ha='left', fontsize=10)
+        
+        plt.tight_layout()
+        print(f"\n--- Displaying plot for: {metric_name} ---")
+        plt.show()
 
 def print_ranking_report_horizontal(ranking_data, metrics):
     """
@@ -229,18 +245,12 @@ def print_ranking_report_horizontal(ranking_data, metrics):
     print(" " * 35 + "OVERALL PERFORMANCE RANKING REPORT")
     print("="*110)
 
-    # Use short, descriptive headers that fit on one line
     short_headers = {
-        "Total Reward": "Reward",
-        "Soups Delivered": "Soups",
-        "Reward Efficiency": "Effic.",
-        "Conflict Count": "Conflict",
-        "95th Percentile Distance": "Dist.",
-        "Time to First Reward": "Time"
+        "Total Reward": "Reward", "Soups Delivered": "Soups",
+        "Reward Efficiency": "Effic.", "Conflict Count": "Conflict",
+        "95th Percentile Distance": "Dist.", "Time to First Reward": "Time"
     }
     metric_headers = [short_headers.get(m, m) for m in metrics]
-
-    # Adjust spacing for the new headers
     header = f"{'Rank':<6} | {'Agent Pair':<45} | {'Score':<10} | " + " | ".join([f'{h:<8}' for h in metric_headers])
     print(header)
     print("-" * len(header))
@@ -251,6 +261,60 @@ def print_ranking_report_horizontal(ranking_data, metrics):
 
     print("="*len(header))
     print("Scores for each metric are normalized from 0 (worst) to 100 (best).")
+
+def plot_rank_distribution_scatter(ranking_data, metrics):
+    """
+    Creates a scatter plot to show the rank of each system across all metrics.
+    """
+    if not ranking_data:
+        print("No ranking data to plot.")
+        return
+        
+    # Define a unique color and marker for each agent pair
+    pairs = sorted([item['pair'] for item in ranking_data])
+    colors = plt.cm.get_cmap('tab10', len(pairs))
+    markers = ['o', 's', '^', 'D', 'v', 'p', '*', '<', '>']
+    
+    style_map = {pair: {'color': colors(i), 'marker': markers[i % len(markers)]} for i, pair in enumerate(pairs)}
+
+    # Determine the rank for each pair on each metric
+    plot_data = []
+    for metric in metrics:
+        # Sort pairs by score for the current metric to determine rank
+        sorted_by_metric = sorted(ranking_data, key=lambda x: x['individual_scores'][metric], reverse=True)
+        for i, item in enumerate(sorted_by_metric):
+            rank = i + 1
+            plot_data.append({'metric': metric, 'rank': rank, 'pair': item['pair']})
+
+    plt.figure(figsize=(14, 8))
+    
+    for item in plot_data:
+        style = style_map[item['pair']]
+        # Add a small random jitter to the y-axis to prevent overlap
+        y_val = metrics.index(item['metric']) + np.random.uniform(-0.1, 0.1)
+        plt.scatter(item['rank'], y_val, color=style['color'], marker=style['marker'], s=200, alpha=0.8, edgecolors='black')
+
+    # Create a custom legend
+    legend_elements = [Line2D([0], [0], marker=style_map[pair]['marker'], color=style_map[pair]['color'], label=pair, 
+                              linestyle='None', markersize=10) for pair in pairs]
+    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', title="Agent Pairs")
+
+    # Formatting the plot
+    plt.yticks(range(len(metrics)), metrics)
+    plt.xlabel("Performance Rank (1 is best)", fontsize=12)
+    plt.title("System Performance Rank Across Metrics", fontsize=16, weight='bold')
+    plt.grid(True, axis='x', linestyle='--', alpha=0.6)
+    
+    # Set x-axis ticks to be integers representing ranks
+    num_pairs = len(pairs)
+    plt.xticks(np.arange(1, num_pairs + 1))
+    
+    plt.gca().invert_yaxis() # So the first metric in the list is at the top
+    plt.tight_layout(rect=[0, 0, 0.75, 1]) # Adjust layout to make room for legend
+    
+    print("\n--- Displaying Rank Distribution Scatter Plot ---")
+    plt.show()
+
 
 if __name__ == "__main__":
     FOLDER_TO_ANALYZE = "./game_trajectories/Cramped Room"
@@ -268,8 +332,13 @@ if __name__ == "__main__":
             print("\nNo data was found. Please check the folder path and file names.")
         else:
             final_ranks, used_metrics = calculate_and_rank_metrics(aggregated_stats)
+            
             print_ranking_report_horizontal(final_ranks, used_metrics)
-            plot_overall_rankings(final_ranks)
+            
+            plot_all_rankings_individually(final_ranks, used_metrics)
+
+            # Add the call to the new scatter plot function
+            plot_rank_distribution_scatter(final_ranks, used_metrics)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] {e}\nPlease ensure the `FOLDER_TO_ANALYZE` variable is set correctly.")
