@@ -6,6 +6,7 @@ from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from dtw import dtw # Required for Dynamic Time Warping
 
 # This is the provided code from one_pair_analysis.py.
 # Helper functions from the original script are reused to ensure consistency.
@@ -85,25 +86,43 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
         
     observations = data['ep_observations'][0]
     episode_length = len(observations)
-    if episode_length == 0: return None
+    if episode_length < 2: return None # Need at least 2 points for DTW
 
     actions = data.get('ep_actions', [[]])[0]
     rewards = data.get('ep_rewards', [[]])[0]
     
-    distance_series = []
-    manhattan_distance_series = [] # New series for Manhattan Distance
+    # Initialize lists for all distance metrics
+    distance_series, manhattan_distance_series, chebyshev_distance_series, minkowski_p3_series = [], [], [], []
+    path0, path1 = [], []
+
     for t in range(episode_length):
         players = observations[t].get("players", [])
         if len(players) == 2 and players[0] and players[1]:
-            pos0, pos1 = tuple(players[0]["position"]), tuple(players[1]["position"])
-            # Euclidean distance
-            distance_series.append(math.sqrt((pos0[0] - pos1[0])**2 + (pos0[1] - pos1[1])**2))
-            # Manhattan distance
-            manhattan_distance_series.append(abs(pos0[0] - pos1[0]) + abs(pos0[1] - pos1[1]))
-        else:
-            distance_series.append(None)
-            manhattan_distance_series.append(None)
+            pos0 = np.array(players[0]["position"])
+            pos1 = np.array(players[1]["position"])
+            path0.append(pos0)
+            path1.append(pos1)
             
+            # Calculate all point-to-point distances
+            distance_series.append(np.linalg.norm(pos0 - pos1)) # Euclidean
+            manhattan_distance_series.append(np.linalg.norm(pos0 - pos1, ord=1)) # Manhattan
+            chebyshev_distance_series.append(np.linalg.norm(pos0 - pos1, ord=np.inf)) # Chebyshev
+            minkowski_p3_series.append(np.power(np.sum(np.power(np.abs(pos0 - pos1), 3)), 1/3)) # Minkowski p=3
+        else:
+            # Append None if data is missing for a timestep
+            for series in [distance_series, manhattan_distance_series, chebyshev_distance_series, minkowski_p3_series]:
+                series.append(None)
+    
+    # Calculate Dynamic Time Warping for the entire episode path
+    dtw_distance = None
+    if len(path0) > 1 and len(path1) > 1: # DTW requires paths of length > 1
+        try:
+            # Using Manhattan distance for the local cost matrix in DTW
+            dtw_result = dtw(np.array(path0), np.array(path1), keep_internals=False, distance_only=True)
+            dtw_distance = dtw_result.distance
+        except Exception:
+            dtw_distance = None # Handle potential errors in DTW calculation
+
     total_reward = sum(rewards)
     soups_delivered = rewards.count(20)
     reward_efficiency = total_reward / episode_length if episode_length > 0 else 0
@@ -111,7 +130,10 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
     
     return {
         "distance_series": distance_series,
-        "manhattan_distance_series": manhattan_distance_series, # Added new metric data
+        "manhattan_distance_series": manhattan_distance_series,
+        "chebyshev_distance_series": chebyshev_distance_series,
+        "minkowski_p3_series": minkowski_p3_series,
+        "dtw_distance": dtw_distance,
         "total_reward": total_reward,
         "soups_delivered": soups_delivered,
         "reward_efficiency": reward_efficiency,
@@ -148,52 +170,65 @@ def calculate_and_rank_metrics(aggregated_data):
     """
     pair_metrics_raw = defaultdict(dict)
 
-    # Make sure the metric name here...
     METRICS_TO_RANK = {
         "Total Reward": True,
         "Soups Delivered": True,
         "Reward Efficiency": True,
         "Conflict Count": False,
-        "95th Percentile Euclidean Dist": False, # Renamed for clarity
+        "Time to First Reward": False,
+        "95th Percentile Euclidean Dist": False,
         "95th Percentile Manhattan Dist": False,
-        "Time to First Reward": False
+        "95th Percentile Chebyshev Dist": False,
+        "95th Percentile Minkowski p=3 Dist": False,
+        "DTW Path Distance": False,
     }
 
-    # Step 1: Calculate raw average value for each metric for each pair
     for pair, episodes_data in aggregated_data.items():
+        # Standard metrics
         pair_metrics_raw[pair]["Total Reward"] = np.mean([e["total_reward"] for e in episodes_data])
         pair_metrics_raw[pair]["Soups Delivered"] = np.mean([e["soups_delivered"] for e in episodes_data])
         pair_metrics_raw[pair]["Reward Efficiency"] = np.mean([e["reward_efficiency"] for e in episodes_data])
         pair_metrics_raw[pair]["Conflict Count"] = np.mean([e["conflict_count"] for e in episodes_data])
-
-        all_distances = [d for e in episodes_data for d in e["distance_series"] if d is not None]
-        # ...matches the dictionary key used here exactly.
-        pair_metrics_raw[pair]["95th Percentile Euclidean Dist"] = np.percentile(all_distances, 95) if all_distances else np.nan
-
-        all_manhattan_distances = [d for e in episodes_data for d in e["manhattan_distance_series"] if d is not None]
-        pair_metrics_raw[pair]["95th Percentile Manhattan Dist"] = np.percentile(all_manhattan_distances, 95) if all_manhattan_distances else np.nan
-
         first_reward_times = [e["ep_rewards"].index(20) for e in episodes_data if 20 in e["ep_rewards"]]
         pair_metrics_raw[pair]["Time to First Reward"] = np.mean(first_reward_times) if first_reward_times else 400
 
-    # Step 2: Normalize all metrics to a 0-100 score and sum them
+        # Point-to-point distance metrics (95th percentile)
+        dist_series_keys = {
+            "95th Percentile Euclidean Dist": "distance_series",
+            "95th Percentile Manhattan Dist": "manhattan_distance_series",
+            "95th Percentile Chebyshev Dist": "chebyshev_distance_series",
+            "95th Percentile Minkowski p=3 Dist": "minkowski_p3_series",
+        }
+        for metric_name, series_key in dist_series_keys.items():
+            all_distances = [d for e in episodes_data for d in e[series_key] if d is not None]
+            pair_metrics_raw[pair][metric_name] = np.percentile(all_distances, 95) if all_distances else np.nan
+
+        # Path-based distance metric (mean)
+        all_dtw_distances = [e["dtw_distance"] for e in episodes_data if e["dtw_distance"] is not None]
+        pair_metrics_raw[pair]["DTW Path Distance"] = np.mean(all_dtw_distances) if all_dtw_distances else np.nan
+
+    # Normalization and scoring
     final_scores = []
     for pair in aggregated_data.keys():
         total_score = 0
         individual_scores = {}
         for metric, higher_is_better in METRICS_TO_RANK.items():
-            values = [data[metric] for data in pair_metrics_raw.values() if not np.isnan(data[metric])]
-            min_val, max_val = min(values), max(values)
-            
-            current_val = pair_metrics_raw[pair][metric]
-            
-            if max_val == min_val:
+            values = [data[metric] for data in pair_metrics_raw.values() if data.get(metric) is not None and not np.isnan(data[metric])]
+            if not values: 
                 norm_score = 0.5
             else:
-                norm_score = (current_val - min_val) / (max_val - min_val)
-            
-            if not higher_is_better:
-                norm_score = 1 - norm_score
+                min_val, max_val = min(values), max(values)
+                current_val = pair_metrics_raw[pair].get(metric)
+
+                if current_val is None or np.isnan(current_val):
+                    norm_score = 0 # Penalize pairs with no data for a metric
+                elif max_val == min_val:
+                    norm_score = 0.5
+                else:
+                    norm_score = (current_val - min_val) / (max_val - min_val)
+                
+                if not higher_is_better and not (current_val is None or np.isnan(current_val)):
+                    norm_score = 1 - norm_score
             
             individual_scores[metric] = norm_score * 100
             total_score += individual_scores[metric]
@@ -208,10 +243,6 @@ def calculate_and_rank_metrics(aggregated_data):
     return final_scores, list(METRICS_TO_RANK.keys())
 
 def plot_all_rankings_individually(ranking_data, metrics):
-    """
-    Generates and displays a separate plot for the overall ranking and for each 
-    individual metric, one by one.
-    """
     if not ranking_data:
         print("No ranking data to plot.")
         return
@@ -222,27 +253,24 @@ def plot_all_rankings_individually(ranking_data, metrics):
         plt.figure(figsize=(12, 8))
         
         if metric_name == "Overall Score":
-            sort_key, values_key = "total_score", "total_score"
-            sorted_data = sorted(ranking_data, key=lambda x: x[values_key], reverse=True)
+            sorted_data = sorted(ranking_data, key=lambda x: x["total_score"], reverse=True)
+            values = [r["total_score"] for r in sorted_data]
             bar_color = 'navy'
         else:
-            sort_key, values_key = "individual_scores", metric_name
-            sorted_data = sorted(ranking_data, key=lambda x: x[sort_key][values_key], reverse=True)
+            sorted_data = sorted(ranking_data, key=lambda x: x["individual_scores"].get(metric_name, 0), reverse=True)
+            values = [r["individual_scores"].get(metric_name, 0) for r in sorted_data]
             bar_color = 'cornflowerblue'
 
         labels = [r["pair"] for r in sorted_data]
-        values = [r[sort_key][values_key] if metric_name != "Overall Score" else r[values_key] for r in sorted_data]
         
-        bars = plt.barh(labels, values, color=bar_color, edgecolor='black')
-        
+        plt.barh(labels, values, color=bar_color, edgecolor='black')
         plt.title(f"Ranking by: {metric_name}", fontsize=16, weight='bold')
         plt.xlabel("Score (Higher is Better)", fontsize=12)
         plt.gca().invert_yaxis()
         plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey', axis='x')
 
-        for bar in bars:
-            width = bar.get_width()
-            plt.text(width, bar.get_y() + bar.get_height() / 2, f' {width:.1f}',
+        for bar in plt.gca().patches:
+            plt.text(bar.get_width(), bar.get_y() + bar.get_height() / 2, f' {bar.get_width():.1f}',
                      va='center', ha='left', fontsize=10)
         
         plt.tight_layout()
@@ -253,18 +281,21 @@ def print_ranking_report_horizontal(ranking_data, metrics):
     """
     Prints a detailed report in a wide, horizontal table with short, single-line headers.
     """
-    print("\n" + "="*120)
-    print(" " * 40 + "OVERALL PERFORMANCE RANKING REPORT")
-    print("="*120)
+    print("\n" + "="*150) # Increased width for new columns
+    print(" " * 60 + "OVERALL PERFORMANCE RANKING REPORT")
+    print("="*150)
 
     short_headers = {
         "Total Reward": "Reward", 
         "Soups Delivered": "Soups",
         "Reward Efficiency": "Effic.", 
         "Conflict Count": "Conflict",
-        "95th Percentile Euclidean Dist": "Euc. D.", # This key must also match
+        "Time to First Reward": "Time",
+        "95th Percentile Euclidean Dist": "Euc. D.",
         "95th Percentile Manhattan Dist": "Manh. D.",
-        "Time to First Reward": "Time"
+        "95th Percentile Chebyshev Dist": "Cheb. D.",
+        "95th Percentile Minkowski p=3 Dist": "Mink. D",
+        "DTW Path Distance": "DTW",
     }
     metric_headers = [short_headers.get(m, m) for m in metrics]
     header = f"{'Rank':<6} | {'Agent Pair':<45} | {'Score':<10} | " + " | ".join([f'{h:<8}' for h in metric_headers])
@@ -287,19 +318,25 @@ def plot_rank_distribution_scatter(ranking_data, metrics):
         return
         
     pairs = sorted([item['pair'] for item in ranking_data])
-    colors = plt.cm.get_cmap('tab10', len(pairs))
-    markers = ['o', 's', '^', 'D', 'v', 'p', '*', '<', '>']
+    
+    # --- THIS LINE HAS BEEN UPDATED ---
+    # The old, deprecated way: colors = plt.cm.get_cmap('tab20', len(pairs))
+    # The new, correct way:
+    colors = plt.get_cmap('tab20', len(pairs))
+    # ---------------------------------
+
+    markers = ['o', 's', '^', 'D', 'v', 'p', '*', '<', '>', 'X']
     
     style_map = {pair: {'color': colors(i), 'marker': markers[i % len(markers)]} for i, pair in enumerate(pairs)}
 
     plot_data = []
     for metric in metrics:
-        sorted_by_metric = sorted(ranking_data, key=lambda x: x['individual_scores'][metric], reverse=True)
+        sorted_by_metric = sorted(ranking_data, key=lambda x: x['individual_scores'].get(metric, 0), reverse=True)
         for i, item in enumerate(sorted_by_metric):
             rank = i + 1
             plot_data.append({'metric': metric, 'rank': rank, 'pair': item['pair']})
 
-    plt.figure(figsize=(14, 8))
+    plt.figure(figsize=(14, 10))
     
     for item in plot_data:
         style = style_map[item['pair']]
@@ -323,7 +360,6 @@ def plot_rank_distribution_scatter(ranking_data, metrics):
     
     print("\n--- Displaying Rank Distribution Scatter Plot ---")
     plt.show()
-
 
 if __name__ == "__main__":
     FOLDER_TO_ANALYZE = "./game_trajectories/Cramped Room"
