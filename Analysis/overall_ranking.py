@@ -55,14 +55,14 @@ def parse_filename_for_agents_and_episode(filename):
     raw_agent1 = match.group(1).strip()
     raw_agent2 = match.group(2).strip()
     episode_number = int(match.group(3))
-    
+
     valid_agents = {
         name.lower(): name for name in [
             "Human Keyboard Input", "Human-aware PPO",
             "Population-Based Training", "Self-Play"
         ]
     }
-    
+
     normalized_agent1 = ' '.join(raw_agent1.split()).lower()
     normalized_agent2 = ' '.join(raw_agent2.split()).lower()
 
@@ -80,18 +80,17 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
             data = json.load(f)
     except Exception:
         return None
-    
+
     if not data.get('ep_observations') or not data['ep_observations'][0]:
         return None
-        
+
     observations = data['ep_observations'][0]
     episode_length = len(observations)
-    if episode_length < 2: return None # Need at least 2 points for DTW
+    if episode_length < 2: return None
 
     actions = data.get('ep_actions', [[]])[0]
     rewards = data.get('ep_rewards', [[]])[0]
-    
-    # Initialize lists for all distance metrics
+
     distance_series, manhattan_distance_series, chebyshev_distance_series, minkowski_p3_series = [], [], [], []
     path0, path1 = [], []
 
@@ -102,32 +101,28 @@ def get_stats_and_distance_series_from_json_file(filepath, agent1_name, agent2_n
             pos1 = np.array(players[1]["position"])
             path0.append(pos0)
             path1.append(pos1)
-            
-            # Calculate all point-to-point distances
-            distance_series.append(np.linalg.norm(pos0 - pos1)) # Euclidean
-            manhattan_distance_series.append(np.linalg.norm(pos0 - pos1, ord=1)) # Manhattan
-            chebyshev_distance_series.append(np.linalg.norm(pos0 - pos1, ord=np.inf)) # Chebyshev
-            minkowski_p3_series.append(np.power(np.sum(np.power(np.abs(pos0 - pos1), 3)), 1/3)) # Minkowski p=3
+
+            distance_series.append(np.linalg.norm(pos0 - pos1))
+            manhattan_distance_series.append(np.linalg.norm(pos0 - pos1, ord=1))
+            chebyshev_distance_series.append(np.linalg.norm(pos0 - pos1, ord=np.inf))
+            minkowski_p3_series.append(np.power(np.sum(np.power(np.abs(pos0 - pos1), 3)), 1/3))
         else:
-            # Append None if data is missing for a timestep
             for series in [distance_series, manhattan_distance_series, chebyshev_distance_series, minkowski_p3_series]:
                 series.append(None)
-    
-    # Calculate Dynamic Time Warping for the entire episode path
+
     dtw_distance = None
-    if len(path0) > 1 and len(path1) > 1: # DTW requires paths of length > 1
+    if len(path0) > 1 and len(path1) > 1:
         try:
-            # Using Manhattan distance for the local cost matrix in DTW
             dtw_result = dtw(np.array(path0), np.array(path1), keep_internals=False, distance_only=True)
             dtw_distance = dtw_result.distance
         except Exception:
-            dtw_distance = None # Handle potential errors in DTW calculation
+            dtw_distance = None
 
     total_reward = sum(rewards)
     soups_delivered = rewards.count(20)
     reward_efficiency = total_reward / episode_length if episode_length > 0 else 0
     conflict_count = detect_coordination_conflicts(observations, actions)
-    
+
     return {
         "distance_series": distance_series,
         "manhattan_distance_series": manhattan_distance_series,
@@ -147,10 +142,10 @@ def compute_aggregated_pair_episode_data(folder_path, episodes_to_average):
 
     all_filenames = os.listdir(folder_path)
     aggregated_data = defaultdict(list)
-    
+
     for filename in all_filenames:
         if not filename.endswith(".json"): continue
-        
+
         parsed_info = parse_filename_for_agents_and_episode(filename)
         if parsed_info:
             agent1_name, agent2_name, episode = parsed_info
@@ -160,14 +155,10 @@ def compute_aggregated_pair_episode_data(folder_path, episodes_to_average):
                 if stats:
                     key = tuple(sorted((agent1_name, agent2_name)))
                     aggregated_data[key].append(stats)
-                    
+
     return aggregated_data
 
 def calculate_and_rank_metrics(aggregated_data):
-    """
-    Calculates metrics, normalizes them to a 0-100 scale, and computes an
-    overall performance score where higher is better.
-    """
     pair_metrics_raw = defaultdict(dict)
 
     METRICS_TO_RANK = {
@@ -184,7 +175,6 @@ def calculate_and_rank_metrics(aggregated_data):
     }
 
     for pair, episodes_data in aggregated_data.items():
-        # Standard metrics
         pair_metrics_raw[pair]["Total Reward"] = np.mean([e["total_reward"] for e in episodes_data])
         pair_metrics_raw[pair]["Soups Delivered"] = np.mean([e["soups_delivered"] for e in episodes_data])
         pair_metrics_raw[pair]["Reward Efficiency"] = np.mean([e["reward_efficiency"] for e in episodes_data])
@@ -192,7 +182,6 @@ def calculate_and_rank_metrics(aggregated_data):
         first_reward_times = [e["ep_rewards"].index(20) for e in episodes_data if 20 in e["ep_rewards"]]
         pair_metrics_raw[pair]["Time to First Reward"] = np.mean(first_reward_times) if first_reward_times else 400
 
-        # Point-to-point distance metrics (95th percentile)
         dist_series_keys = {
             "95th Percentile Euclidean Dist": "distance_series",
             "95th Percentile Manhattan Dist": "manhattan_distance_series",
@@ -203,33 +192,31 @@ def calculate_and_rank_metrics(aggregated_data):
             all_distances = [d for e in episodes_data for d in e[series_key] if d is not None]
             pair_metrics_raw[pair][metric_name] = np.percentile(all_distances, 95) if all_distances else np.nan
 
-        # Path-based distance metric (mean)
         all_dtw_distances = [e["dtw_distance"] for e in episodes_data if e["dtw_distance"] is not None]
         pair_metrics_raw[pair]["DTW Path Distance"] = np.mean(all_dtw_distances) if all_dtw_distances else np.nan
 
-    # Normalization and scoring
     final_scores = []
     for pair in aggregated_data.keys():
         total_score = 0
         individual_scores = {}
         for metric, higher_is_better in METRICS_TO_RANK.items():
             values = [data[metric] for data in pair_metrics_raw.values() if data.get(metric) is not None and not np.isnan(data[metric])]
-            if not values: 
+            if not values:
                 norm_score = 0.5
             else:
                 min_val, max_val = min(values), max(values)
                 current_val = pair_metrics_raw[pair].get(metric)
 
                 if current_val is None or np.isnan(current_val):
-                    norm_score = 0 # Penalize pairs with no data for a metric
+                    norm_score = 0
                 elif max_val == min_val:
                     norm_score = 0.5
                 else:
                     norm_score = (current_val - min_val) / (max_val - min_val)
-                
+
                 if not higher_is_better and not (current_val is None or np.isnan(current_val)):
                     norm_score = 1 - norm_score
-            
+
             individual_scores[metric] = norm_score * 100
             total_score += individual_scores[metric]
 
@@ -243,27 +230,20 @@ def calculate_and_rank_metrics(aggregated_data):
     return final_scores, list(METRICS_TO_RANK.keys())
 
 def plot_all_rankings_individually(ranking_data, metrics):
+    """
+    Displays a separate plot for each individual metric (but does not save them).
+    """
     if not ranking_data:
         print("No ranking data to plot.")
         return
 
-    all_plot_metrics = ["Overall Score"] + metrics
-
-    for metric_name in all_plot_metrics:
+    for metric_name in metrics:
         plt.figure(figsize=(12, 8))
-        
-        if metric_name == "Overall Score":
-            sorted_data = sorted(ranking_data, key=lambda x: x["total_score"], reverse=True)
-            values = [r["total_score"] for r in sorted_data]
-            bar_color = 'navy'
-        else:
-            sorted_data = sorted(ranking_data, key=lambda x: x["individual_scores"].get(metric_name, 0), reverse=True)
-            values = [r["individual_scores"].get(metric_name, 0) for r in sorted_data]
-            bar_color = 'cornflowerblue'
-
+        sorted_data = sorted(ranking_data, key=lambda x: x["individual_scores"].get(metric_name, 0), reverse=True)
+        values = [r["individual_scores"].get(metric_name, 0) for r in sorted_data]
         labels = [r["pair"] for r in sorted_data]
         
-        plt.barh(labels, values, color=bar_color, edgecolor='black')
+        plt.barh(labels, values, color='cornflowerblue', edgecolor='black')
         plt.title(f"Ranking by: {metric_name}", fontsize=16, weight='bold')
         plt.xlabel("Score (Higher is Better)", fontsize=12)
         plt.gca().invert_yaxis()
@@ -278,17 +258,14 @@ def plot_all_rankings_individually(ranking_data, metrics):
         plt.show()
 
 def print_ranking_report_horizontal(ranking_data, metrics):
-    """
-    Prints a detailed report in a wide, horizontal table with short, single-line headers.
-    """
-    print("\n" + "="*150) # Increased width for new columns
+    print("\n" + "="*150)
     print(" " * 60 + "OVERALL PERFORMANCE RANKING REPORT")
     print("="*150)
 
     short_headers = {
-        "Total Reward": "Reward", 
+        "Total Reward": "Reward",
         "Soups Delivered": "Soups",
-        "Reward Efficiency": "Effic.", 
+        "Reward Efficiency": "Effic.",
         "Conflict Count": "Conflict",
         "Time to First Reward": "Time",
         "95th Percentile Euclidean Dist": "Euc. D.",
@@ -309,22 +286,51 @@ def print_ranking_report_horizontal(ranking_data, metrics):
     print("="*len(header))
     print("Scores for each metric are normalized from 0 (worst) to 100 (best).")
 
-def plot_rank_distribution_scatter(ranking_data, metrics):
+def plot_and_save_overall_ranking_bar(ranking_data):
     """
-    Creates a scatter plot to show the rank of each system across all metrics.
+    Creates, saves, and displays a bar chart of the overall ranking with updated styling.
+    """
+    plt.figure(figsize=(14, 9)) # Increased figure size for readability
+    
+    sorted_data = sorted(ranking_data, key=lambda x: x["total_score"], reverse=True)
+    labels = [r["pair"] for r in sorted_data]
+    values = [r["total_score"] for r in sorted_data]
+    
+    plt.barh(labels, values, color='cornflowerblue', edgecolor='black')
+    
+    # --- UPDATED TITLE AND FONT SIZES ---
+    # plt.title("Agent Pair Overall Performance Ranking", fontsize=20, weight='bold')
+    plt.xlabel("Total Score (Higher is Better)", fontsize=16)
+    plt.ylabel("Agent Pairs", fontsize=16)
+    plt.tick_params(axis='x', labelsize=12)
+    plt.tick_params(axis='y', labelsize=12)
+    # ------------------------------------
+
+    plt.gca().invert_yaxis()
+    plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey', axis='x')
+    
+    for bar in plt.gca().patches:
+        plt.text(bar.get_width(), bar.get_y() + bar.get_height() / 2, f' {bar.get_width():.1f}',
+                 va='center', ha='left', fontsize=12)
+    
+    plt.tight_layout()
+    
+    output_filename = 'overall_ranking_bar.png'
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    print(f"\n--- Overall ranking bar plot saved as '{output_filename}' ---")
+    
+    print("--- Displaying overall ranking plot ---")
+    plt.show()
+
+def plot_and_save_rank_distribution_scatter(ranking_data, metrics):
+    """
+    Creates, saves, and displays the rank distribution scatter plot with updated styling.
     """
     if not ranking_data:
-        print("No ranking data to plot.")
         return
         
     pairs = sorted([item['pair'] for item in ranking_data])
-    
-    # --- THIS LINE HAS BEEN UPDATED ---
-    # The old, deprecated way: colors = plt.cm.get_cmap('tab20', len(pairs))
-    # The new, correct way:
     colors = plt.get_cmap('tab20', len(pairs))
-    # ---------------------------------
-
     markers = ['o', 's', '^', 'D', 'v', 'p', '*', '<', '>', 'X']
     
     style_map = {pair: {'color': colors(i), 'marker': markers[i % len(markers)]} for i, pair in enumerate(pairs)}
@@ -336,53 +342,62 @@ def plot_rank_distribution_scatter(ranking_data, metrics):
             rank = i + 1
             plot_data.append({'metric': metric, 'rank': rank, 'pair': item['pair']})
 
-    plt.figure(figsize=(14, 10))
+    plt.figure(figsize=(16, 12)) # Increased figure size
     
     for item in plot_data:
         style = style_map[item['pair']]
         y_val = metrics.index(item['metric']) + np.random.uniform(-0.1, 0.1)
-        plt.scatter(item['rank'], y_val, color=style['color'], marker=style['marker'], s=200, alpha=0.8, edgecolors='black')
+        plt.scatter(item['rank'], y_val, color=style['color'], marker=style['marker'], s=250, alpha=0.8, edgecolors='black')
 
-    legend_elements = [Line2D([0], [0], marker=style_map[pair]['marker'], color=style_map[pair]['color'], label=pair, 
-                              linestyle='None', markersize=10) for pair in pairs]
-    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', title="Agent Pairs")
+    legend_elements = [Line2D([0], [0], marker=style_map[pair]['marker'], color=style_map[pair]['color'], label=pair,
+                              linestyle='None', markersize=12) for pair in pairs]
+    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', title="Agent Pairs", fontsize=14)
+    
+    # --- UPDATED FONT SIZES ---
+    plt.yticks(range(len(metrics)), metrics, fontsize=12)
+    plt.xlabel("Performance Rank (1 is best)", fontsize=16)
+    # plt.title("System Performance Rank Across Metrics", fontsize=20, weight='bold')
+    plt.tick_params(axis='x', labelsize=12)
+    # --------------------------
 
-    plt.yticks(range(len(metrics)), metrics)
-    plt.xlabel("Performance Rank (1 is best)", fontsize=12)
-    plt.title("System Performance Rank Across Metrics", fontsize=16, weight='bold')
     plt.grid(True, axis='x', linestyle='--', alpha=0.6)
-    
-    num_pairs = len(pairs)
-    plt.xticks(np.arange(1, num_pairs + 1))
-    
+    plt.xticks(np.arange(1, len(pairs) + 1))
     plt.gca().invert_yaxis()
-    plt.tight_layout(rect=[0, 0, 0.75, 1])
     
-    print("\n--- Displaying Rank Distribution Scatter Plot ---")
+    plt.tight_layout(rect=[0, 0, 0.8, 1])
+    
+    output_filename = 'rank_distribution_scatter.png'
+    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+    print(f"\n--- Rank distribution scatter plot saved as '{output_filename}' ---")
+
+    print("--- Displaying rank distribution scatter plot ---")
     plt.show()
+
 
 if __name__ == "__main__":
     FOLDER_TO_ANALYZE = "./game_trajectories/Cramped Room"
     EPISODES_TO_USE = range(1, 21)
 
     print(f"Analyzing episodes {min(EPISODES_TO_USE)}-{max(EPISODES_TO_USE)} from folder: '{FOLDER_TO_ANALYZE}'")
-    
+
     try:
         aggregated_stats = compute_aggregated_pair_episode_data(
             FOLDER_TO_ANALYZE,
             episodes_to_average=EPISODES_TO_USE
         )
-        
+
         if not aggregated_stats:
             print("\nNo data was found. Please check the folder path and file names.")
         else:
             final_ranks, used_metrics = calculate_and_rank_metrics(aggregated_stats)
-            
+
             print_ranking_report_horizontal(final_ranks, used_metrics)
             
             plot_all_rankings_individually(final_ranks, used_metrics)
+            
+            plot_and_save_overall_ranking_bar(final_ranks)
 
-            plot_rank_distribution_scatter(final_ranks, used_metrics)
+            plot_and_save_rank_distribution_scatter(final_ranks, used_metrics)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] {e}\nPlease ensure the `FOLDER_TO_ANALYZE` variable is set correctly.")
