@@ -231,11 +231,14 @@ def calculate_and_rank_metrics(aggregated_data):
 
 def plot_all_rankings_individually(ranking_data, metrics):
     """
-    Displays a separate plot for each individual metric (but does not save them).
+    Saves a separate plot for each individual metric into 'Ranking_metrics_plots' folder.
     """
     if not ranking_data:
         print("No ranking data to plot.")
         return
+
+    output_dir = "Ranking_metrics_plots"
+    os.makedirs(output_dir, exist_ok=True)
 
     for metric_name in metrics:
         plt.figure(figsize=(12, 8))
@@ -244,7 +247,7 @@ def plot_all_rankings_individually(ranking_data, metrics):
         labels = [r["pair"] for r in sorted_data]
         
         plt.barh(labels, values, color='cornflowerblue', edgecolor='black')
-        plt.title(f"Ranking by: {metric_name}", fontsize=16, weight='bold')
+        # plt.title(f"Ranking by: {metric_name}", fontsize=16, weight='bold')
         plt.xlabel("Score (Higher is Better)", fontsize=12)
         plt.gca().invert_yaxis()
         plt.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey', axis='x')
@@ -252,10 +255,16 @@ def plot_all_rankings_individually(ranking_data, metrics):
         for bar in plt.gca().patches:
             plt.text(bar.get_width(), bar.get_y() + bar.get_height() / 2, f' {bar.get_width():.1f}',
                      va='center', ha='left', fontsize=10)
-        
+
         plt.tight_layout()
-        print(f"\n--- Displaying plot for: {metric_name} ---")
-        plt.show()
+
+        # Save figure
+        filename_safe = metric_name.replace(" ", "_").replace("=", "").replace(".", "").replace(">", "").replace("<", "")
+        filepath = os.path.join(output_dir, f"{filename_safe}.png")
+        plt.savefig(filepath, dpi=300)
+        print(f"Saved plot for '{metric_name}' to: {filepath}")
+        plt.close()
+
 
 def print_ranking_report_horizontal(ranking_data, metrics):
     print("\n" + "="*150)
@@ -351,10 +360,10 @@ def plot_and_save_rank_distribution_scatter(ranking_data, metrics):
 
     legend_elements = [Line2D([0], [0], marker=style_map[pair]['marker'], color=style_map[pair]['color'], label=pair,
                               linestyle='None', markersize=12) for pair in pairs]
-    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', title="Agent Pairs", fontsize=14)
+    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='lower right', title="Agent Pairs", fontsize=16, title_fontsize=16)
     
     # --- UPDATED FONT SIZES ---
-    plt.yticks(range(len(metrics)), metrics, fontsize=12)
+    plt.yticks(range(len(metrics)), metrics, fontsize=16)
     plt.xlabel("Performance Rank (1 is best)", fontsize=16)
     # plt.title("System Performance Rank Across Metrics", fontsize=20, weight='bold')
     plt.tick_params(axis='x', labelsize=12)
@@ -373,6 +382,45 @@ def plot_and_save_rank_distribution_scatter(ranking_data, metrics):
     print("--- Displaying rank distribution scatter plot ---")
     plt.show()
 
+def plot_and_save_all_metrics_in_one_figure(ranking_data, metrics):
+    """
+    Combines all individual metric ranking plots into one multi-subplot figure and saves it.
+    """
+    if not ranking_data:
+        print("[INFO] No ranking data to visualize.")
+        return
+
+    n_metrics = len(metrics)
+    n_cols = 3
+    n_rows = (n_metrics + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, n_rows * 5))
+    axes = axes.flatten()
+
+    for idx, metric_name in enumerate(metrics):
+        ax = axes[idx]
+        sorted_data = sorted(ranking_data, key=lambda x: x["individual_scores"].get(metric_name, 0), reverse=True)
+        values = [r["individual_scores"].get(metric_name, 0) for r in sorted_data]
+        labels = [r["pair"] for r in sorted_data]
+
+        ax.barh(labels, values, color='cornflowerblue', edgecolor='black')
+        ax.set_title(f"{metric_name}", fontsize=14, weight='bold')
+        ax.set_xlabel("Score", fontsize=12)
+        ax.invert_yaxis()
+        ax.grid(True, linestyle='--', alpha=0.6, axis='x')
+        for bar in ax.patches:
+            ax.text(bar.get_width(), bar.get_y() + bar.get_height() / 2, f' {bar.get_width():.1f}',
+                    va='center', ha='left', fontsize=9)
+
+    # Hide any extra empty subplots
+    for j in range(n_metrics, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    output_path = "all_metrics_rankings_combined.png"
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"\n--- Combined metric ranking plot saved as '{output_path}' ---")
+    plt.show()
 
 if __name__ == "__main__":
     FOLDER_TO_ANALYZE = "./game_trajectories/Cramped Room"

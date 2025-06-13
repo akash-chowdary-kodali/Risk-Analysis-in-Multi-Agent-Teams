@@ -351,15 +351,30 @@ def analyze_and_plot_average_stats_and_distances(folder_path, episodes_to_averag
         valid_distances = averaged_distances[~np.isnan(averaged_distances)]
 
         # Create histogram
+        output_dir = "Distance_95th_percentile_plots"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Create histogram with 95th percentile line, no title, and save as image
         plt.figure(figsize=(8, 5))
-        plt.hist(valid_distances, bins=30, edgecolor='black')
-        plt.title(
-            f"Histogram of Averaged Distances\n{N1_name} vs {N2_name}", fontsize=13)
+        counts, bins, patches = plt.hist(valid_distances, bins=30, edgecolor='black', alpha=0.7)
+
+        percentile_95 = np.percentile(valid_distances, 95)
+        plt.axvline(percentile_95, color='red', linestyle='--', linewidth=2, label=f'95th Percentile = {percentile_95:.2f}')
+
         plt.xlabel('Distance')
         plt.ylabel('Frequency')
         plt.grid(True)
+        plt.legend()
+
+        # Sanitize and create file path
+        safe_filename = f"{N1_name.replace(' ', '_')}_vs_{N2_name.replace(' ', '_')}_distance_histogram.png"
+        output_path = os.path.join(output_dir, safe_filename)
+
+        # Save and close
         plt.tight_layout()
-        plt.show()
+        plt.savefig(output_path)
+        print(f"  Saved histogram to: {output_path}")
+        plt.close()
 
 def compute_and_plot_95th_percentiles(aggregated_pair_episode_data):
     """
