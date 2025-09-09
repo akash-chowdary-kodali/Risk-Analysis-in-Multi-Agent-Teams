@@ -1,10 +1,18 @@
-![MDP python tests](https://github.com/HumanCompatibleAI/overcooked_ai/workflows/.github/workflows/pythontests.yml/badge.svg) ![overcooked-ai codecov](https://codecov.io/gh/HumanCompatibleAI/overcooked_ai/branch/master/graph/badge.svg) [![PyPI version](https://badge.fury.io/py/overcooked-ai.svg)](https://badge.fury.io/py/overcooked-ai) [!["Open Issues"](https://img.shields.io/github/issues-raw/HumanCompatibleAI/overcooked_ai.svg)](https://github.com/HumanCompatibleAI/minerl/overcooked_ai) [![GitHub issues by-label](https://img.shields.io/github/issues-raw/HumanCompatibleAI/overcooked_ai/bug.svg?color=red)](https://github.com/HumanCompatibleAI/overcooked_ai/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+label%3Abug) [![Downloads](https://pepy.tech/badge/overcooked-ai)](https://pepy.tech/project/overcooked-ai)
-[![arXiv](https://img.shields.io/badge/arXiv-1910.05789-bbbbbb.svg)](https://arxiv.org/abs/1910.05789)
-
 # Overcooked-AI 🧑‍🍳🤖
 
+> **Note**
+> This is a fork of the original [HumanCompatibleAI/overcooked_ai](https://github.com/HumanCompatibleAI/overcooked_ai) repository, adapted for the research detailed below.
+
+## About This Project: Risk Analysis of Player Substitutions
+
+The code in this repository was used to investigate the impact of player substitutions on the coordination and dynamics of multi-agent teams. By leveraging risk analysis, we can formally detect when switching a player significantly disrupts established collaboration patterns.
+
+**Abstract:**
+
+The substitution of players in an existing multi-agent team often disrupts established coordination patterns, leading to outcomes that range from rapid adaptation to systemic breakdowns. In this work, we leverage risk analysis to formally detect when switching a player significantly impacts team dynamics. By repeatedly simulating gameplay and systematically comparing team behavior before and after player substitutions, we identify which substituted players induce the most substantial changes in collaboration patterns. Our analysis reveals that agents trained with human-aware objectives tend to maintain smoother coordination after switches, while those based solely on human demonstrations or self-play lead to greater spatial and temporal disruption during partner transitions. We demonstrate the effectiveness of our approach using the Overcooked benchmark.
+
+
 <p align="center">
-  <!-- <img src="overcooked_ai_js/images/screenshot.png" width="350"> -->
   <img src="./images/layouts.gif" width="100%"> 
   <i>5 of the available layouts. New layouts are easy to hardcode or generate programmatically.</i>
 </p>
@@ -17,64 +25,64 @@ The goal of the game is to deliver soups as fast as possible. Each soup requires
 
 You can **try out the game [here](https://humancompatibleai.github.io/overcooked-demo/)** (playing with some previously trained DRL agents). To play with your own trained agents using this interface, or to collect more human-AI or human-human data, you can use the code [here](https://github.com/HumanCompatibleAI/overcooked_ai/tree/master/src/overcooked_demo). You can find some human-human and human-AI gameplay data already collected [here](https://github.com/HumanCompatibleAI/overcooked_ai/tree/master/src/human_aware_rl/static/human_data).
 
-**NOTE + LOOKING FOR CONTRIBUTORS:** DRL and BC implementations are now deprecated. We used to include code for training BC and PPO agents in the `human_aware_rl` directory. See [this issue](https://github.com/HumanCompatibleAI/overcooked_ai/issues/162) for more details.
+### **Analysis (`/analysis`)** 📊
 
-This benchmark was build in the context of a 2019 paper: *[On the Utility of Learning about Humans for Human-AI Coordination](https://arxiv.org/abs/1910.05789)*. Also see our [blog post](https://bair.berkeley.edu/blog/2019/10/21/coordination/).
+This directory contains scripts for processing the raw simulation data from the `game_trajectories` folder to quantitatively evaluate agent performance and team dynamics.
 
-## Research Papers using Overcooked-AI 📑
+#### **`overall_ranking.py`**
 
+This is the primary script for performing the risk analysis and performance evaluation. It systematically processes the JSON trajectory files to rank each agent pair based on a wide range of metrics.
 
-- Carroll, Micah, Rohin Shah, Mark K. Ho, Thomas L. Griffiths, Sanjit A. Seshia, Pieter Abbeel, and Anca Dragan. ["On the utility of learning about humans for human-ai coordination."](https://arxiv.org/abs/1910.05789) NeurIPS 2019.
-- Charakorn, Rujikorn, Poramate Manoonpong, and Nat Dilokthanakul. [“Investigating Partner Diversification Methods in Cooperative Multi-Agent Deep Reinforcement Learning.”](https://www.rujikorn.com/files/papers/diversity_ICONIP2020.pdf) Neural Information Processing. ICONIP 2020.
-- Knott, Paul, Micah Carroll, Sam Devlin, Kamil Ciosek, Katja Hofmann, Anca D. Dragan, and Rohin Shah. ["Evaluating the Robustness of Collaborative Agents."](https://arxiv.org/abs/2101.05507) AAMAS 2021.
-- Nalepka, Patrick, Jordan P. Gregory-Dunsmore, James Simpson, Gaurav Patil, and Michael J. Richardson. ["Interaction Flexibility in Artificial Agents Teaming with Humans."](https://www.researchgate.net/publication/351533529_Interaction_Flexibility_in_Artificial_Agents_Teaming_with_Humans) Cogsci 2021.
-- Fontaine, Matthew C., Ya-Chuan Hsu, Yulun Zhang, Bryon Tjanaka, and Stefanos Nikolaidis. [“On the Importance of Environments in Human-Robot Coordination”](http://arxiv.org/abs/2106.10853) RSS 2021.
-- Zhao, Rui, Jinming Song, Hu Haifeng, Yang Gao, Yi Wu, Zhongqian Sun, Yang Wei. ["Maximum Entropy Population Based Training for Zero-Shot Human-AI Coordination"](https://arxiv.org/abs/2112.11701). NeurIPS Cooperative AI Workshop, 2021.
-- Sarkar, Bidipta, Aditi Talati, Andy Shih, and Dorsa Sadigh. [“PantheonRL: A MARL Library for Dynamic Training Interactions”](https://iliad.stanford.edu/pdfs/publications/sarkar2022pantheonrl.pdf). AAAI 2022.
-- Ribeiro, João G., Cassandro Martinho, Alberto Sardinha, Francisco S. Melo. ["Assisting Unknown Teammates in Unknown Tasks: Ad Hoc Teamwork under Partial Observability"](https://arxiv.org/abs/2201.03538).
-- Xihuai Wang, Shao Zhang, Wenhao Zhang, Wentao Dong, Jingxiao Chen, Ying Wen and Weinan Zhang. NeurIPS 2024. [“ZSC-Eval: An Evaluation Toolkit and Benchmark for Multi-agent Zero-shot Coordination”](https://arxiv.org/abs/2310.05208v2).
+**Key Functionality:**
 
+* **Data Parsing:** Reads game data from multiple episodes for each unique agent pair (e.g., "Human-aware PPO vs. Self-Play").
+* **Metric Calculation:** Computes a comprehensive set of metrics to evaluate both task success and coordination quality. These include:
+    * **Performance Metrics:** Total Reward, Soups Delivered, and Reward Efficiency.
+    * **Coordination Metrics:** Coordination Conflicts (agents attempting to interact with the same space) and **Dynamic Time Warping (DTW)** to measure the similarity of agent movement paths.
+    * **Spatial Disruption Metrics:** Calculates the 95th percentile of various distances (Euclidean, Manhattan, etc.) between agents.
+* **Ranking System:** Normalizes each metric to a score from 0 (worst) to 100 (best) and calculates a total composite score to produce a final ranking for each agent pair.
+
+**How to Run:**
+Simply execute the script from your terminal:
+```bash
+python analysis/overall_ranking.py
+```
+
+**Outputs:**
+Running the script generates several outputs:
+1.  A detailed **ranking report** printed directly to the terminal.
+2.  A series of saved plots (`.png` files) for visualization, including:
+    * `overall_ranking_bar.png`: A bar chart showing the final composite score and rank for each pair.
+    * `rank_distribution_scatter.png`: A scatter plot that visualizes how each team ranks across all the different individual metrics.
+    * `all_metrics_rankings_combined.png`: A combined figure showing the rankings for every single metric.
 
 ## Installation ☑️
 
 ### Installing from PyPI 🗜
 
 You can install the pre-compiled wheel file using pip.
-```
-pip install overcooked-ai
-```
+`pip install overcooked-ai`
 Note that PyPI releases are stable but infrequent. For the most up-to-date development features, build from source. We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/) to install the package, so that you can use the provided lockfile to ensure no minimal package version issues.
 
 
 ### Building from source 🔧
 
-Clone the repo 
-```
-git clone https://github.com/HumanCompatibleAI/overcooked_ai.git
-```
+Clone the repo
+`git clone https://github.com/HumanCompatibleAI/overcooked_ai.git`
 
 Using uv (recommended):
-```
-uv venv
-uv sync
-```
+`uv venv`
+`uv sync`
 
 
 ### Verifying Installation 📈
 
 When building from source, you can verify the installation by running the Overcooked unit test suite. The following commands should all be run from the `overcooked_ai` project root directory:
 
-```
-python testing/overcooked_test.py
-```
+`python testing/overcooked_test.py`
 
-
-
-
-If you're thinking of using the planning code extensively, you should run the full testing suite that verifies all of the Overcooked accessory tools (this can take 5-10 mins): 
-```
-python -m unittest discover -s testing/ -p "*_test.py"
-```
+If you're thinking of using the planning code extensively, you should run the full testing suite that verifies all of the Overcooked accessory tools (this can take 5-10 mins):
+`python -m unittest discover -s testing/ -p "*_test.py"`
 
 See this [notebook](Overcooked%20Tutorial.ipynb) for a quick guide on getting started using the environment.
 
@@ -98,18 +106,18 @@ See this [notebook](Overcooked%20Tutorial.ipynb) for a quick guide on getting st
 `overcooked_demo` contains:
 
 `server/`:
-- `app.py`: The Flask app 
+- `app.py`: The Flask app
 - `game.py`: The main logic of the game. State transitions are handled by overcooked.Gridworld object embedded in the game environment
 - `move_agents.py`: A script that simplifies copying checkpoints to [agents](src/overcooked_demo/server/static/assets/agents/) directory. Instruction of how to use can be found inside the file or by running `python move_agents.py -h`
 
-`up.sh`: Shell script to spin up the Docker server that hosts the game 
+`up.sh`: Shell script to spin up the Docker server that hosts the game
 
 `human_aware_rl` contains (NOTE: this is not supported anymore, see bottom of the README for more info):
 
 `ppo/`:
 - `ppo_rllib.py`: Primary module where code for training a PPO agent resides. This includes an rllib compatible wrapper on `OvercookedEnv`, utilities for converting rllib `Policy` classes to Overcooked `Agent`s, as well as utility functions and callbacks
 - `ppo_rllib_client.py` Driver code for configuing and launching the training of an agent. More details about usage below
-- `ppo_rllib_from_params_client.py`: train one agent with PPO in Overcooked with variable-MDPs 
+- `ppo_rllib_from_params_client.py`: train one agent with PPO in Overcooked with variable-MDPs
 - `ppo_rllib_test.py` Reproducibility tests for local sanity checks
 - `run_experiments.sh` Script for training agents on 5 classical layouts
 - `trained_example/` Pretrained model for testing purposes
@@ -120,7 +128,7 @@ See this [notebook](Overcooked%20Tutorial.ipynb) for a quick guide on getting st
 - `tests.py`: preliminary tests for the above
 
 `imitation/`:
-- `behavior_cloning_tf2.py`:  Module for training, saving, and loading a BC model
+- `behavior_cloning_tf2.py`: Module for training, saving, and loading a BC model
 - `behavior_cloning_tf2_test.py`: Contains basic reproducibility tests as well as unit tests for the various components of the bc module.
 
 `human/`:
@@ -130,16 +138,6 @@ See this [notebook](Overcooked%20Tutorial.ipynb) for a quick guide on getting st
 `utils.py`: utils for the repo
 
 
-## Raw Data :ledger:
+## Raw Data :
 
-The raw data used during BC training is >100 MB, which makes it inconvenient to distribute via git. The code uses pickled dataframes for training and testing, but in case one needs to original data it can be found [here](https://drive.google.com/drive/folders/1aGV8eqWeOG5BMFdUcVoP2NHU_GFPqi57?usp=share_link) 
-
-## Deprecated: Behavior Cloning and Reinforcement Learning 
-
-
-
-
-
-## Further Issues and questions ❓
-
-If you have issues or questions, you can contact [Micah Carroll](https://micahcarroll.github.io) at mdc@berkeley.edu.
+The raw data used during BC training is >100 MB, which makes it inconvenient to distribute via git. The code uses pickled dataframes for training and testing, but in case one needs to original data it can be found [here](https://drive.google.com/drive/folders/1aGV8eqWeOG5BMFdUcVoP2NHU_GFPqi57?usp=share_link)
