@@ -12,6 +12,16 @@ The code in this repository was used to investigate the impact of player substit
 The substitution of players in an existing multi-agent team often disrupts established coordination patterns, leading to outcomes that range from rapid adaptation to systemic breakdowns. In this work, we leverage risk analysis to formally detect when switching a player significantly impacts team dynamics. By repeatedly simulating gameplay and systematically comparing team behavior before and after player substitutions, we identify which substituted players induce the most substantial changes in collaboration patterns. Our analysis reveals that agents trained with human-aware objectives tend to maintain smoother coordination after switches, while those based solely on human demonstrations or self-play lead to greater spatial and temporal disruption during partner transitions. We demonstrate the effectiveness of our approach using the Overcooked benchmark.
 
 
+## 2026 follow-up: do coordination metrics measure what they claim? (in progress)
+
+I extended this work to test whether hand-built coordination and risk metrics (collision counts, inter-agent distance risk, Value-at-Risk rankings) actually track team performance.
+
+- **Data:** 9 agent pairings (Self-Play, Human-aware PPO, Population-Based Training, plus idle-partner controls) on 4 layouts (Cramped Room, Coordination Ring, Asymmetric Advantages, Forced Coordination). That's 450 episodes, collected from the hosted Overcooked demo with Playwright automation.
+- **Method:** for each metric, I state the causal story it assumes. Then I check it against task reward three ways: raw, controlling for how engaged the agents are, and with and without idle teams. Finally I test whether it replicates on the other layouts.
+- **Analyses:** partial correlations with engagement controls, VaR ranking vs. reward monotonicity, and cross-layout replication with significance tests.
+
+Code and results stay private until the paper is submitted.
+
 <p align="center">
   <img src="./images/layouts.gif" width="100%"> 
   <i>5 of the available layouts. New layouts are easy to hardcode or generate programmatically.</i>
